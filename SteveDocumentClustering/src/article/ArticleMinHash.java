@@ -1,9 +1,10 @@
 package article;
 
 import java.util.ArrayList;
-
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.Vector;
+
 import helper.RandomHashFunction;
 
 public class ArticleMinHash {
@@ -20,9 +21,14 @@ public class ArticleMinHash {
 	private int n;  /* size of each NGram in this MinHash */
 
 	final int NUM_HASH_FUNCTIONS = 100;  
+	final int NUM_BANDS = 10;
+	final int NUM_ROWS_PER_BAND = 10;
+	
 	private RandomHashFunction[] randomHashFunctions;
 	
 	private int minNGram[][];
+	
+	
 	private class NGramOccur {
 		NGram ngram;   /* repeats the key */
 	
@@ -80,6 +86,63 @@ public class ArticleMinHash {
 		}
 	}
 	
+	/* make list of article pairs for which similarity will be calculated
+	 * across full signature, based on exact match in at least one band
+	 * Requires minNGram matrix to have been previously calculated.
+	 * No side effects, returns list of unique article pairs to be 
+	 * considered as candidate pairs
+	 */
+	public TreeSet<ArticlePair> findCandidateArticlePairs() {
+		
+		System.out.println("Finding candidate article pairs");
+		TreeSet<ArticlePair> candidatePairs = new TreeSet<ArticlePair>();
+		
+		for (int bandidx = 0; bandidx < NUM_BANDS; ++bandidx) {
+			/* bandMap is reused for each band */
+			System.out.printf("Starting band #%d\n", bandidx);
+			TreeMap<BandSignature, Vector<Integer>> bandMap =
+					new TreeMap<BandSignature, Vector<Integer>>();
+			/* System.out.println("Hashing articles to band map"); */
+			for (int articleIdx = 0; articleIdx < numArticles; ++articleIdx) {
+				Vector<Integer> thisBandVector = new Vector<Integer>();
+				for (int rowidx = 0; rowidx < NUM_ROWS_PER_BAND; ++rowidx) 
+					thisBandVector.add(
+						minNGram[bandidx * NUM_ROWS_PER_BAND + rowidx][articleIdx]);
+				BandSignature thisBandSignature = new BandSignature(thisBandVector);
+				if (bandMap.containsKey(thisBandSignature)) {
+					Vector<Integer> articlesSoFar = bandMap.get(thisBandSignature);
+					articlesSoFar.add(articleIdx);
+				}
+				else {
+					Vector<Integer> articlesSoFar = new Vector<Integer>();
+					articlesSoFar.add(articleIdx);
+					bandMap.put(thisBandSignature,  articlesSoFar);
+				}
+					
+			}
+			/* generate candidate pairs for this band based on article pairs
+			 * belonging to same bandMap entry (same signature in band)
+			 * Each entry in for loop is a vector of integers 
+			 *
+			 */
+			/* System.out.println("Enumerating pairs based on band map"); */
+			for (Vector<Integer> articleVector : bandMap.values()) {
+				for (int idx1 = 0; idx1 < articleVector.size(); ++idx1) {
+					for (int idx2 = idx1+1; idx2 < articleVector.size(); ++idx2) {
+						int articleIdx1 = articleVector.get(idx1);
+						int articleIdx2 = articleVector.get(idx2);
+						ArticlePair thisPair =
+								new ArticlePair(articleIdx1, articleIdx2);
+				
+						candidatePairs.add(thisPair);
+					}
+				}
+			}
+		}
+		System.out.printf("Candidate pairs generated: %d\n",
+				candidatePairs.size());
+		return candidatePairs;
+	}
 
 	
 	private void calculateSignatures() {
@@ -201,6 +264,10 @@ public class ArticleMinHash {
 			}
 		}
 		return bestMatch;
+	}
+	
+	public void showSimilarity(ArticlePair pair) {
+		showSimilarity(pair.idx1, pair.idx2);
 	}
 	
 	public void showSimilarity(int idx1, int idx2) {

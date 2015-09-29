@@ -4,6 +4,8 @@ import xmlDocument.XMLDocument;
 import article.ArticleSet;
 import article.ArticleMinHash;
 import article.Article;
+import article.ArticlePair;
+import java.util.TreeSet;
 
 
 import org.w3c.dom.Document;
@@ -107,8 +109,9 @@ public class DocCluster {
 			System.out.println("7 to compare articles");
 			System.out.println("8 to display article min-hash signatures");
 			System.out.println("9 to find closest match for article");
-			System.out.println("10 to exit");
-			System.out.print("Enter choice (1-10): ");
+			System.out.println("10 to find closest matches in set");
+			System.out.println("11 to exit");
+			System.out.print("Enter choice (1-11): ");
 			
 			choice = Integer.parseInt(scanner.nextLine());
 			
@@ -147,12 +150,24 @@ public class DocCluster {
 			case 9:
 				closestMatchLoop();
 				break;
+			case 10:
+				if (articleMinHash == null) 
+					articleMinHash =
+				        new ArticleMinHash(articleSet, n);
+				TreeSet<ArticlePair> candidatePairs = 
+				    articleMinHash.findCandidateArticlePairs();
+				for (ArticlePair thisArticlePair : candidatePairs) {
+					thisArticlePair.display();
+					articleMinHash.showSimilarity(thisArticlePair);
+
+				}
+				break;
 				
 			default:
 				break;
 			}
 
-		} while (choice >= 1 && choice <= 9);
+		} while (choice >= 1 && choice <= 10);
 		scanner.close();	
 		System.exit(1);
 	}
