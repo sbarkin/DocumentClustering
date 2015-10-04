@@ -5,17 +5,21 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.Vector;
 
+
+
 import helper.RandomHashFunction;
 
 public class ArticleMinHash {
 	
 	/* populated by buildNGramsFromArticles which is called by constructor */
 
+	/* mapping of nGrams to the article(s) they are part of */
 	private TreeMap<NGram, NGramOccur> nGramMap;
 	
 	/* These three members are populated by constructor, first two
 	 * are based directly on arguments provided
 	 */
+
 	private ArticleSet articleSet;
 	private int numArticles;  
 	private int n;  /* size of each NGram in this MinHash */
@@ -26,8 +30,26 @@ public class ArticleMinHash {
 	
 	private RandomHashFunction[] randomHashFunctions;
 	
+	/* for each hash function and article, what is the minimum ngram
+	 * present in the article
+	 */
 	private int minNGram[][];
 	
+	/* Map each cluster ID to a vector of articles belonging to this cluster */
+	private TreeMap<Integer, Vector<Integer>> clusterMap;
+	
+	/* Map each article to its cluster, -1 means not yet assigned */
+	private int cluster[]; /* cluster ID for each article */
+	public int numClusters;  /* number of clusters found */
+	
+	/* candidate pairs of articles based on band hash functions
+	 * sufficiently similar to be inserted into graph and
+	 * define clusters accordingly
+	 */
+	private TreeSet<ArticlePair> candidatePairs;
+	
+	/* similarity graph */
+	ArticleSetGraph graph;
 	
 	private class NGramOccur {
 		NGram ngram;   /* repeats the key */
@@ -86,64 +108,212 @@ public class ArticleMinHash {
 		}
 	}
 	
+	public boolean clustersDefined() {
+		if (cluster == null)
+			return false;
+		else
+			return true;
+	}
+	
+	public void findClusters() {
+		findCandidateArticlePairs();  /* creates candidatePairs */
+		/* for (ArticlePair thisArticlePair : candidatePairs) {
+			thisArticlePair.display();
+			articleMinHash.showSimilarity(thisArticlePair);
+
+		} */
+		constructSimilarityGraph();  /* candidatePairs -> graph */
+		
+		
+		 /* Change implementation of cluster assignment for each article
+		  * (currently an array) so that we can display clusters
+		  *  (or allow querying for a single cluster)
+		  */
+		labelClusters();
+		displayClusters();
+	}
+	
+	private void labelClusters() {
+		System.out.println("Labeling clusters.");
+		cluster = new int[numArticles];
+		clusterMap = new TreeMap<Integer, Vector<Integer>>();
+		Integer articleIdx;
+		for (articleIdx = 0; articleIdx < numArticles; ++articleIdx)
+			cluster[articleIdx] = -1; /* no cluster yet for this article */
+		
+		Integer currentCluster = 0;
+		for (articleIdx = 0; articleIdx < numArticles; ++articleIdx) {
+			if (cluster[articleIdx] == -1) {
+				
+				/* depth first search through graph starting at this article */
+				if (graph.containsArticle(articleIdx)) 
+					/* Depth first search */
+					labelCluster(articleIdx, currentCluster); 
+			
+				
+				else {
+					cluster[articleIdx] = currentCluster; /* singleton */
+					Vector<Integer> articleVector = new Vector<Integer>();
+					articleVector.add(articleIdx);  /* vector with 1 entry */
+					clusterMap.put(currentCluster, articleVector );
+				}
+				++currentCluster;	
+			}
+		}
+		System.out.printf("# of clusters found: (%d)\n", currentCluster);
+		numClusters = currentCluster;
+				
+	}
+	
+	private void labelCluster(Integer articleIdx, int thisCluster) {
+		cluster[articleIdx] = thisCluster; /* label this article */
+		
+		Vector<Integer> articleVector = clusterMap.get(thisCluster);
+		if (articleVector == null) {
+			articleVector = new Vector<Integer>();
+			articleVector.add(articleIdx);  
+			clusterMap.put(thisCluster, articleVector );
+		}
+		else
+			articleVector.add(articleIdx);  
+		
+
+		/* visit and label all connected (sufficiently similar) articles */
+		for (Integer similarArticleIdx : graph.similarArticles(articleIdx)) 
+			if (cluster[similarArticleIdx] == -1)
+				labelCluster(similarArticleIdx, thisCluster);
+		
+	}
+
+	private void displayClusters() {
+		for (int cluster : clusterMap.keySet()) {
+			if (clusterMap.get(cluster).size() > 1)
+				displayClusterBrief(cluster);
+		}		
+	}
+	
+	private void displayClusterBrief(int cluster) {
+		if (!clusterMap.containsKey(cluster)) 
+			System.out.printf("Invalid cluster #%d\n",  cluster);
+		else {
+			Vector<Integer> articlesInCluster = clusterMap.get(cluster);
+			System.out.printf("Cluster #%d contains (%d) articles: ",
+					cluster, articlesInCluster.size());
+			for (int articleIdx : articlesInCluster) {
+				System.out.print(articleIdx + " ");
+			}
+				
+			System.out.println();
+
+		}
+	}
+	
+	public void displayClusterDetailed(int cluster) {
+		if (!clusterMap.containsKey(cluster)) 
+			System.out.printf("Invalid cluster #%d\n",  cluster);
+		else {
+			Vector<Integer> articlesInCluster = clusterMap.get(cluster);
+			System.out.printf("Cluster #%d contains (%d) articles\n",
+					cluster, articlesInCluster.size());
+			for (int articleIdx : articlesInCluster) {
+				Article thisArticle = articleSet.getArticle(articleIdx);
+				thisArticle.displaySummary();
+			}
+
+		}
+	}
+	private void constructSimilarityGraph() {
+		assert candidatePairs != null;
+		assert graph == null;
+		
+		System.out.println("Constructing similarity graph from article pairs.");
+		graph = new ArticleSetGraph();
+	
+		for (ArticlePair thisArticlePair: candidatePairs) {
+			int idx1 = thisArticlePair.idx1;
+			int idx2 = thisArticlePair.idx2;
+			graph.addArticlePair(idx1, idx2, jaccardSignatureSimilarity(idx1, idx2));	
+		}
+		System.out.println("Similarity graph complete");
+		System.out.printf("# of graph vertices (%d),   # of edges (%d)\n",
+				graph.numArticles(), graph.numEdges());
+	}
 	/* make list of article pairs for which similarity will be calculated
 	 * across full signature, based on exact match in at least one band
 	 * Requires minNGram matrix to have been previously calculated.
 	 * No side effects, returns list of unique article pairs to be 
 	 * considered as candidate pairs
 	 */
-	public TreeSet<ArticlePair> findCandidateArticlePairs() {
+	public void findCandidateArticlePairs() {
 		
 		System.out.println("Finding candidate article pairs");
-		TreeSet<ArticlePair> candidatePairs = new TreeSet<ArticlePair>();
+		candidatePairs = new TreeSet<ArticlePair>();
 		
-		for (int bandidx = 0; bandidx < NUM_BANDS; ++bandidx) {
+		for (int bandIdx = 0; bandIdx < NUM_BANDS; ++bandIdx) {
 			/* bandMap is reused for each band */
-			System.out.printf("Starting band #%d\n", bandidx);
-			TreeMap<BandSignature, Vector<Integer>> bandMap =
-					new TreeMap<BandSignature, Vector<Integer>>();
-			/* System.out.println("Hashing articles to band map"); */
-			for (int articleIdx = 0; articleIdx < numArticles; ++articleIdx) {
-				Vector<Integer> thisBandVector = new Vector<Integer>();
-				for (int rowidx = 0; rowidx < NUM_ROWS_PER_BAND; ++rowidx) 
-					thisBandVector.add(
-						minNGram[bandidx * NUM_ROWS_PER_BAND + rowidx][articleIdx]);
-				BandSignature thisBandSignature = new BandSignature(thisBandVector);
-				if (bandMap.containsKey(thisBandSignature)) {
-					Vector<Integer> articlesSoFar = bandMap.get(thisBandSignature);
-					articlesSoFar.add(articleIdx);
-				}
-				else {
-					Vector<Integer> articlesSoFar = new Vector<Integer>();
-					articlesSoFar.add(articleIdx);
-					bandMap.put(thisBandSignature,  articlesSoFar);
-				}
-					
-			}
-			/* generate candidate pairs for this band based on article pairs
-			 * belonging to same bandMap entry (same signature in band)
-			 * Each entry in for loop is a vector of integers 
-			 *
-			 */
-			/* System.out.println("Enumerating pairs based on band map"); */
-			for (Vector<Integer> articleVector : bandMap.values()) {
-				for (int idx1 = 0; idx1 < articleVector.size(); ++idx1) {
-					for (int idx2 = idx1+1; idx2 < articleVector.size(); ++idx2) {
-						int articleIdx1 = articleVector.get(idx1);
-						int articleIdx2 = articleVector.get(idx2);
-						ArticlePair thisPair =
-								new ArticlePair(articleIdx1, articleIdx2);
-				
-						candidatePairs.add(thisPair);
-					}
-				}
-			}
+			System.out.printf("Starting band #%d\n", bandIdx);
+			
+			TreeMap<BandSignature, Vector<Integer>> thisBandMap;
+			
+			thisBandMap = generateBandMap(bandIdx);
+			
+			addToCandidatePairsFromBandMap(thisBandMap, candidatePairs);
+			
 		}
 		System.out.printf("Candidate pairs generated: %d\n",
 				candidatePairs.size());
-		return candidatePairs;
+		/* candidatePairs is now fully populated */
 	}
 
+	private TreeMap<BandSignature, Vector<Integer>> 
+	generateBandMap(int bandIdx) {
+
+		TreeMap<BandSignature, Vector<Integer>> thisBandMap = 
+				new TreeMap<BandSignature, Vector<Integer>>();
+		/* System.out.println("Hashing articles to band map"); */
+		for (int articleIdx = 0; articleIdx < numArticles; ++articleIdx) {
+			Vector<Integer> thisBandVector = new Vector<Integer>();
+			for (int rowidx = 0; rowidx < NUM_ROWS_PER_BAND; ++rowidx) 
+				thisBandVector.add(
+						minNGram[bandIdx * NUM_ROWS_PER_BAND + rowidx][articleIdx]);
+			BandSignature thisBandSignature = new BandSignature(thisBandVector);
+			if (thisBandMap.containsKey(thisBandSignature)) {
+				Vector<Integer> articlesSoFar = thisBandMap.get(thisBandSignature);
+				articlesSoFar.add(articleIdx);
+			}
+			else {
+				Vector<Integer> articlesSoFar = new Vector<Integer>();
+				articlesSoFar.add(articleIdx);
+				thisBandMap.put(thisBandSignature,  articlesSoFar);
+			}
+
+		}
+		return thisBandMap;
+	}
+	
+	private void
+	addToCandidatePairsFromBandMap(
+			TreeMap<BandSignature, Vector<Integer>>thisBandMap, 
+			TreeSet<ArticlePair> candidatePairs) {
+		/* generate candidate pairs for this band based on article pairs
+		 * belonging to same bandMap entry (same signature in band)
+		 * Each entry in for loop is a vector of integers 
+		 *
+		 */
+		/* System.out.println("Enumerating pairs based on band map"); */
+		for (Vector<Integer> articleVector : thisBandMap.values()) {
+			for (int idx1 = 0; idx1 < articleVector.size(); ++idx1) {
+				for (int idx2 = idx1+1; idx2 < articleVector.size(); ++idx2) {
+					int articleIdx1 = articleVector.get(idx1);
+					int articleIdx2 = articleVector.get(idx2);
+					ArticlePair thisPair =
+							new ArticlePair(articleIdx1, articleIdx2);
+
+					candidatePairs.add(thisPair);
+				}
+			}
+		}
+	}
 	
 	private void calculateSignatures() {
 		
@@ -210,6 +380,7 @@ public class ArticleMinHash {
 		
 		/* apply random hash functions */
 		calculateSignatures();
+		numClusters = -1;  /* clusters not found yet */
 		
 	}
 	

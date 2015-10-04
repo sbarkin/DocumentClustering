@@ -91,6 +91,9 @@ public class Article {
 		displaySummary();
 		System.out.println("Full text:");
 		System.out.println(text);
+		System.out.println();
+		System.out.println();
+		
 
 	}
 

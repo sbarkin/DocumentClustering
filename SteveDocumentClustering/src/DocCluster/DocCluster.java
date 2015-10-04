@@ -1,11 +1,11 @@
 package DocCluster;
 
 import xmlDocument.XMLDocument;
-import article.ArticleSet;
+import article.ArticleSet; 
 import article.ArticleMinHash;
 import article.Article;
-import article.ArticlePair;
-import java.util.TreeSet;
+
+
 
 
 import org.w3c.dom.Document;
@@ -20,7 +20,7 @@ import java.util.Scanner;
 
 public class DocCluster {
 	
-	static ArticleSet articleSet;
+	static ArticleSet articleSet; 
 	static ArticleMinHash articleMinHash;
 	static int n;
 	static Scanner scanner;
@@ -29,6 +29,15 @@ public class DocCluster {
 	
 	}
 	
+	public static void displayClusterLoop() {
+		System.out.print("Enter cluster # (or -1 to exit): ");
+		int idx = Integer.parseInt(scanner.nextLine());
+		if (idx < 0 || idx > articleMinHash.numClusters)
+			return;
+		articleMinHash.displayClusterDetailed(idx);
+	}
+		
+		
 	
 	public static void jaccardLoop() {
 	
@@ -67,7 +76,7 @@ public class DocCluster {
 			articleMinHash.showSimilarity(idx1, bestMatchIdx);
 		}
 			
-	}
+	} 
 	public static void main(String args[])
 			throws ParserConfigurationException, SAXException, IOException
 	{
@@ -109,9 +118,10 @@ public class DocCluster {
 			System.out.println("7 to compare articles");
 			System.out.println("8 to display article min-hash signatures");
 			System.out.println("9 to find closest match for article");
-			System.out.println("10 to find closest matches in set");
-			System.out.println("11 to exit");
-			System.out.print("Enter choice (1-11): ");
+			System.out.println("10 to form article clusters");
+			System.out.println("11 to display articles in specific cluster");
+			System.out.println("12 to exit");
+			System.out.print("Enter choice (1-12): ");
 			
 			choice = Integer.parseInt(scanner.nextLine());
 			
@@ -146,6 +156,7 @@ public class DocCluster {
 					articleMinHash =
 				        new ArticleMinHash(articleSet, n);
 				articleMinHash.displaySignatures();
+				break;
 				
 			case 9:
 				closestMatchLoop();
@@ -154,20 +165,21 @@ public class DocCluster {
 				if (articleMinHash == null) 
 					articleMinHash =
 				        new ArticleMinHash(articleSet, n);
-				TreeSet<ArticlePair> candidatePairs = 
-				    articleMinHash.findCandidateArticlePairs();
-				for (ArticlePair thisArticlePair : candidatePairs) {
-					thisArticlePair.display();
-					articleMinHash.showSimilarity(thisArticlePair);
-
-				}
+				articleMinHash.findClusters();
+				break;  
+			case 11:
+				if (articleMinHash == null) 
+					articleMinHash =
+				        new ArticleMinHash(articleSet, n);
+				if (!articleMinHash.clustersDefined())
+					articleMinHash.findClusters();
+				displayClusterLoop();
 				break;
 				
 			default:
-				break;
+				break; 
 			}
-
-		} while (choice >= 1 && choice <= 10);
+		} while (choice >= 1 && choice <= 11);
 		scanner.close();	
 		System.exit(1);
 	}
